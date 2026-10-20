@@ -7,17 +7,25 @@ mkdir -p "$W/off" "$W/self"
 [ -f "$W/off/camoufox-bin" ] || unzip -q -o "$OFF" -d "$W/off"
 [ -f "$W/self/camoufox-bin" ] || unzip -q -o "$SELF" -d "$W/self"
 echo "## (a) required files in self-built bundle"
-for f in camoufox-bin properties.json version.json fontconfig; do
+for f in camoufox-bin properties.json fontconfig; do
   [ -e "$W/self/$f" ] && echo "OK   $f" || echo "MISS $f"
 done
+# version.json is not in any release zip: the launcher (camoufox-js / deploy script) writes it at install time
+[ -e "$W/off/version.json" ] || [ -e "$W/self/version.json" ] || echo "n/a  version.json (absent from both zips; written at install)"
 echo "## file list (path + type) diff"
 (cd "$W/off" && find . | sort) > "$W/off.list"; (cd "$W/self" && find . | sort) > "$W/self.list"
 echo "official=$(wc -l < $W/off.list) self=$(wc -l < $W/self.list)"
 diff "$W/off.list" "$W/self.list" && echo "file list IDENTICAL"
 echo "## text/config files (must be identical)"
-for f in properties.json version.json camoufox.cfg distribution/policies.json defaults/pref/local-settings.js chrome.css \
+for f in properties.json camoufox.cfg distribution/policies.json chrome.css \
          application.ini platform.ini dependentlibs.list; do
   if cmp -s "$W/off/$f" "$W/self/$f"; then echo "SAME $f"; else echo "DIFF $f"; diff <(cat "$W/off/$f" 2>/dev/null) <(cat "$W/self/$f" 2>/dev/null) | head -8; fi
+done
+echo "## every non-ELF file outside omni.ja (sha256)"
+for d in off self; do (cd "$W/$d" && find . -type f ! -name '*.so' ! -name 'camoufox*' ! -name gfxtest ! -name omni.ja ! -path './fonts/*' -exec sha256sum {} + | sort -k2) > "$W/$d.misc"; done
+diff "$W/off.misc" "$W/self.misc" | grep '^[<>]' | awk '{print $1, $3}' | sort -k2 | uniq -f1 -c | awk '{print "  differs:", $3}'
+echo "  ($(wc -l < $W/off.misc) files compared)"
+for f in /dev/null; do :
 done
 echo "## fontconfig/ and fonts/ trees"
 diff -r -q "$W/off/fontconfig" "$W/self/fontconfig" && echo "fontconfig IDENTICAL"

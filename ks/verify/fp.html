@@ -81,7 +81,24 @@ async function collect() {
     x.fillStyle = '#069'; x.fillText('Camoufox fp \u{1F600} 測試', 2, 15);
     x.fillStyle = 'rgba(102,204,0,0.7)'; x.fillText('Camoufox fp \u{1F600} 測試', 4, 17);
     x.beginPath(); x.arc(50, 30, 20, 0, Math.PI * 2); x.stroke();
-    return { hash: await sha256(c.toDataURL()), measure: x.measureText('Camoufox fp 測試').width };
+    const first = c.toDataURL();
+    // same drawing on a second canvas: is the text rendering stable inside one page load?
+    const c2 = document.createElement('canvas'); c2.width = 280; c2.height = 60; const y = c2.getContext('2d');
+    y.textBaseline = 'top'; y.font = '16px Arial'; y.fillStyle = '#f60'; y.fillRect(100, 1, 62, 20);
+    y.fillStyle = '#069'; y.fillText('Camoufox fp \u{1F600} 測試', 2, 15);
+    y.fillStyle = 'rgba(102,204,0,0.7)'; y.fillText('Camoufox fp \u{1F600} 測試', 4, 17);
+    y.beginPath(); y.arc(50, 30, 20, 0, Math.PI * 2); y.stroke();
+    return { hash: await sha256(first), sameWithinPage: first === c2.toDataURL(), measure: x.measureText('Camoufox fp 測試').width };
+  })();
+  // shapes only (no text, no fonts): isolates the rasteriser from font loading
+  fp.canvasShapes = await (async () => {
+    const c = document.createElement('canvas'); c.width = 200; c.height = 100; const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 200, 0); g.addColorStop(0, '#123456'); g.addColorStop(1, '#fedcba');
+    x.fillStyle = g; x.fillRect(0, 0, 200, 100);
+    x.globalCompositeOperation = 'multiply'; x.fillStyle = 'rgba(200,50,50,0.6)';
+    x.beginPath(); x.arc(60, 50, 40, 0, Math.PI * 2); x.fill();
+    x.beginPath(); x.moveTo(110, 10); x.bezierCurveTo(190, 10, 120, 90, 190, 90); x.lineWidth = 5; x.strokeStyle = '#0a0'; x.stroke();
+    return await sha256(c.toDataURL());
   })();
   // audio
   fp.audio = await (async () => {

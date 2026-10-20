@@ -68,6 +68,9 @@ A rejected upstream patch means upstream itself is broken for that tag (should n
 
 ## 4. Rebuild
 
+Pin rustc to the version the official release used (read it from the release's `about:buildconfig`, see
+`ks/verify/README.md`): `CFCMD='. ~/.cargo/env; rustup toolchain install <ver> --profile minimal; rustup default <ver>' ks/container/cfrun shell`.
+
 From the host (see `ks/container/README.md`; each stage runs in the userns build container):
 
 ```bash

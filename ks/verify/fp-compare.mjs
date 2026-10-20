@@ -4,7 +4,8 @@
 import { pathToFileURL } from 'node:url';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-const NM = '/home/crawler/camofox/node_modules';
+// node_modules of a camofox-browser 1.10.1 install (camoufox-js 0.10.2 nested inside it, playwright-core at top)
+const NM = process.env.CAMOFOX_NM || '/home/crawler/camofox/node_modules';
 const { launchOptions } = await import(pathToFileURL(`${NM}/@askjo/camofox-browser/node_modules/camoufox-js/dist/index.js`));
 const { firefox } = await import(pathToFileURL(`${NM}/playwright-core/index.mjs`));
 const [outdir, offDir, selfDir, fixture, display = ':177'] = process.argv.slice(2);
@@ -18,14 +19,18 @@ await new Promise(r => setTimeout(r, 1500));
 // Same call shape as camofox-browser 1.10.1 launchBrowserInstance() (os=linux, humanize, enable_cache, virtual display)
 const base = await launchOptions({ executable_path: `${offDir}/camoufox-bin`, headless: false, os: 'linux', humanize: true,
                                    enable_cache: true, virtual_display: display });
+// optional extra prefs for both builds (e.g. disable Gecko's per-session canvas randomisation to compare pixels)
+if (process.env.FP_EXTRA_PREFS) Object.assign(base.firefoxUserPrefs ||= {}, JSON.parse(process.env.FP_EXTRA_PREFS));
 const baseJson = JSON.stringify(base);
 writeFileSync(`${outdir}/launch-options.json`, JSON.stringify(base, null, 1));
 const cfg = Object.keys(base.env || {}).filter(k => k.startsWith('CAMOU_CONFIG')).sort().map(k => base.env[k]).join('');
 writeFileSync(`${outdir}/camou-config.json`, cfg);
 
 async function runOnce(label, dir) {
-  // bundle-level swap: every reference to the official bundle dir now points at the self-built bundle
-  const opts = JSON.parse(baseJson.split(offDir).join(dir));
+  // bundle-level swap: the binary and the bundle's fontconfig come from <dir>; the uBO add-on (downloaded by
+  // camoufox-js into its cache, not part of the browser build) stays the same file for both
+  const opts = JSON.parse(baseJson.split(`${offDir}/camoufox-bin`).join(`${dir}/camoufox-bin`)
+                                  .split(`${offDir}/fontconfig`).join(`${dir}/fontconfig`));
   const t0 = Date.now();
   const browser = await firefox.launch(opts);
   const page = await browser.newPage();
@@ -37,7 +42,7 @@ async function runOnce(label, dir) {
   await page.click('#btn'); res.clicked = await page.textContent('#clicked');
   await page.goto('https://example.com/', { waitUntil: 'load' });
   res.example = { title: await page.title(), url: page.url(), body: (await page.evaluate(() => document.body ? document.body.innerText : "")).slice(0, 80) };
-  res.version = browser.version(); res.ms = Date.now() - t0;
+  res.version = browser.version(); res.exe = opts.executablePath; res.ms = Date.now() - t0;
   await browser.close();
   writeFileSync(`${outdir}/${label}.json`, JSON.stringify(res, null, 1));
   console.log(label, res.version, res.example.title, res.clicked, res.ms + 'ms');

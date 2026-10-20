@@ -21,7 +21,7 @@ sync() {
         --exclude '/.ks-venv/' --exclude 'node_modules/' --exclude '/.ci-work/' --exclude '*.egg-info/' /src/ /work/camoufox/
   python3 -m ci.release set-build --tag "$TAG"     # release number from the tag (working tree only)
   . ./upstream.sh; SRC=camoufox-${version}-${release}
-  ts sync "tree=$(python3 -c 'from ci.browser_inputs import source_digest as d; print(d())') tag=$TAG"
+  ts sync "src_digest=$(python3 -c 'from pathlib import Path; from ci.browser_inputs import source_digest as d; print(d(Path("/src")))') tag=$TAG rustc=$(rustc --version | cut -d' ' -f2)"
 }
 prepare() {
   ccache -M 20G >/dev/null
