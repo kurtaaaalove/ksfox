@@ -50,3 +50,12 @@ $B/bin/cfrun package                 # make package-macos arch=arm64 -> /work/di
 - On the Mac: fingerprint (`fp-compare-mac.mjs`, same idea as `fp-compare.mjs`: one camoufox-js config,
   official/self alternating, only `executablePath` swapped), smoke through a ksfox test instance, outbound.
   See the runbook (`SELFBUILD-RUNBOOK.md` §12) for the commands and the results.
+
+## Result: v156.0.1-beta.36 mac.arm64 (2026-10-20)
+
+prepare 2m51s, cold build 17m23s (-j12), package 3m18s on the ksic 12-core cap. Against the official zip:
+same 1625 paths, same configs/application.ini BuildID/Info.plist, same 1513 fonts, omni.ja differs only in
+3 entries (build paths, MOZ_BUILDID, ks marker), browser/omni.ja identical, 11 of 21 Mach-O byte-identical
+(incl. `MacOS/camoufox`). On the Mac mini: fingerprint 86/86 fields identical in 4 alternating launches
+(canvas randomisation off), ksfox test instance smoke all OK, no new outbound destination.
+`build-tester` not run on the Mac (needs Python ≥ 3.10).
