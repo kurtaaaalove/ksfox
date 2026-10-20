@@ -13,7 +13,11 @@ B=${B:-/home/kurt/camoufox-build}; W=$B/work; REPO=${KS_REPO:-$B/camoufox}; SUDO
 # its own build tree so the main tree (and its obj-*) is not touched. Both keep every isolation setting below.
 WCAM=${KS_WORK_CAMOUFOX:-$W/camoufox}
 case "$WCAM" in "$W"/*) ;; *) echo "KS_WORK_CAMOUFOX must be under $W (nosuid,nodev bind)"; exit 2 ;; esac
-STAGE=${1:?stage}; UNIT=cfbuild-$STAGE
+# KS_TARGET=macos,arm64 (default linux,x86_64): build target; a non-default target gets its own unit/log name
+# cfbuild-<stage>-<os>-<arch> so the Linux pipeline's logs are not mixed in.
+KS_TARGET=${KS_TARGET:-linux,x86_64}
+case "$KS_TARGET" in linux,x86_64|linux,arm64|macos,arm64|macos,x86_64) ;; *) echo "unsupported KS_TARGET=$KS_TARGET"; exit 2 ;; esac
+STAGE=${1:?stage}; UNIT=cfbuild-$STAGE; [ "$KS_TARGET" = linux,x86_64 ] || UNIT=$UNIT-${KS_TARGET/,/-}
 LOGDIR=/var/log/cfbuild
 CMD=(/opt/ks/ks-build.sh "$STAGE"); WAIT=()
 [ "$STAGE" = shell ] && { CMD=(/bin/bash -lc "${CFCMD:?CFCMD}"); WAIT=(--wait --pipe); }
@@ -37,5 +41,5 @@ exec $SUDO systemd-run --unit="$UNIT" --collect "${WAIT[@]}" "${LOGWAIT[@]}" --d
     --bind-ro=$REPO:/src --bind-ro=$REPO/ks/container:/opt/ks \
     --user=builder --chdir=/work/camoufox --setenv=HOME=/home/builder \
     --setenv=KS_JOBS="$(cat $B/state/jobs 2>/dev/null || echo 12)" --setenv=KS_TAG="${KS_TAG:-v156.0.1-beta.36}" \
-    --setenv=MOZ_BUILD_DATE="${KS_BUILD_DATE:-}" \
+    --setenv=MOZ_BUILD_DATE="${KS_BUILD_DATE:-}" --setenv=KS_TARGET="$KS_TARGET" \
     "${CMD[@]}"

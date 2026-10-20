@@ -13,6 +13,8 @@
 | `bt-compare.py <official.json> <candidate.json>` | gate: build-tester grade, score and the set of failed checks identical |
 | `outbound-probe.sh` + `outbound-check.py` + `outbound-baseline-156.txt` | gate: 180 s cold-start capture of the candidate; every destination attributed to it is in the official baseline (DNS names lower-cased: 0x20 case randomisation) |
 | `runtime-checks.py` + `marker-check.py` / `runtime-check.mjs` | `KS-Bundle-Marker` / `KS-Runtime-Check` headers -> validated JSON -> on the VM: the omni.ja mapped by the running browser (`/proc/<pid>/maps`) contains each marker; http(s) pages opened through Playwright show their text (about: pages cannot be driven: Juggler never commits them) |
+| `bundle-diff-mac.sh <official-mac.zip> <self-mac.zip> [workdir]` | macOS (`Camoufox.app`) variant of `bundle-diff.sh`: required files, file list, config files (`Contents/Resources`), fonts, omni.ja entries, Mach-O byte-identity count |
+| `mac/` | run ON the Mac (see `docs/ks/MACOS.md`): `setup-engine.sh` (unpack to `~/engines/ksfox-<ver>` + a separate HOME whose camoufox-js cache points at it), `run9378.sh` (ksfox TEST instance on :9378, never the launchd :9377; MOZ_LOG host resolution), `fp-compare-mac.mjs` (one camoufox-js config, official/self alternating, only `executablePath` swapped), `outbound-mac.sh` (180 s, no sudo: lsof sampling of the browser process tree + MOZ_LOG host names), `verify-all.sh` (all of the above in order) |
 | `safe-unzip.py <zip> <dest>` | the only way a container-built zip is unpacked on the host (refuses symlink / absolute / `..` members, clamps modes) |
 | `pcap-dests.py <pcap>` | outbound destinations (IP, ports, DNS/SNI names) from a `tcpdump -i any` capture, pure Python |
 

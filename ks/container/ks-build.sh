@@ -14,7 +14,12 @@
 set -eo pipefail
 . "$HOME/.cargo/env"
 export CCACHE_DIR=/work/ccache
-export BUILD_TARGET=linux,x86_64
+# KS_TARGET=<os>,<arch> (cfrun passes it; default linux,x86_64). macos,arm64 = cross-compile on Linux like upstream CI:
+# needs the macOS SDK at ~/.mozbuild/MacOSX<min>.sdk (prepare runs `make setup-macos-sdk`: Apple's own CLT pkg from
+# swcdn.apple.com, sha512 pinned in the upstream Makefile). Give a macOS build its own tree (KS_WORK_CAMOUFOX).
+export BUILD_TARGET=${KS_TARGET:-linux,x86_64}
+KT=${BUILD_TARGET%%,*}; KA=${BUILD_TARGET##*,}
+case "$KT,$KA" in linux,x86_64|linux,arm64|macos,arm64|macos,x86_64) ;; *) echo "unsupported KS_TARGET=$BUILD_TARGET"; exit 2 ;; esac
 # MOZBUILD_STATE_PATH is NOT exported: mach records it in MOZ_CONFIGURE_OPTIONS (about:buildconfig) and the
 # official build does not set it; the default (~/.mozbuild -> /work/mozbuild) is the same directory.
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-6}
@@ -38,7 +43,7 @@ sync() {
   python3 -m ci.release set-build --tag "$TAG"     # release number from the tag (working tree only)
   . "$BW/upstream.sh"; SRC=camoufox-${version}-${release}
   KST=/work/camoufox/.ks-state/$SRC; KSGIT=/work/camoufox/.ks-git/$SRC.git
-  ts sync "src_digest=$(python3 -c 'from pathlib import Path; from ci.browser_inputs import source_digest as d; print(d(Path("/src")))') tag=$TAG rustc=$(rustc --version | cut -d' ' -f2) layout=${BW#/work/camoufox}"
+  ts sync "target=$BUILD_TARGET src_digest=$(python3 -c 'from pathlib import Path; from ci.browser_inputs import source_digest as d; print(d(Path("/src")))') tag=$TAG rustc=$(rustc --version | cut -d' ' -f2) layout=${BW#/work/camoufox}"
   cd "$BW"
 }
 apply() {
@@ -51,11 +56,15 @@ prepare() {
   ts fonts start;      make fonts-extract;  python3 scripts/verify-fonts.py; ts fonts end
   apply
   ts bootstrap start;  make mozbootstrap;   ts bootstrap end  # Taskcluster toolchains -> ~/.mozbuild
+  if [ "$KT" = macos ]; then                                  # = multibuild.py for a macos target
+    ts macsdk start; make generate-assets-car; make setup-macos-sdk
+    ts macsdk "end $(ls -d "$HOME"/.mozbuild/MacOSX*.sdk 2>/dev/null | paste -sd' ')"
+  fi
 }
 build() {
   kspatch
-  ts build "start -j$J CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS"
-  python3 -c 'import multibuild; multibuild.setup_linux_sysroots()'
+  ts build "start -j$J CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS target=$BUILD_TARGET"
+  [ "$KT" = linux ] && python3 -c 'import multibuild; multibuild.setup_linux_sysroots()'
   make set-target
   make unbusy
   ( cd "$SRC" && ./mach build -j"$J" )
@@ -63,8 +72,8 @@ build() {
 }
 package() {
   ts package start
-  make package-linux arch=x86_64
-  mkdir -p /work/dist && mv -v camoufox-*-lin.x86_64.zip /work/dist/
+  make package-"$KT" arch="$KA"
+  mkdir -p /work/dist && mv -v camoufox-*-"${KT:0:3}.$KA".zip /work/dist/
   ts package end
 }
 # ---- ks patch stack (patches/ks/zz-ks-NNN-*.patch, applied after every upstream patch) ----

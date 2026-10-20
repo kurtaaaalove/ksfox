@@ -1,6 +1,6 @@
 # ks fork: upstream sync procedure
 
-This fork (`kurtaaaalove/ksfox`) tracks `daijro/camoufox` and builds **Linux x86_64 only**.
+This fork (`kurtaaaalove/ksfox`) tracks `daijro/camoufox` and builds **Linux x86_64**, plus **macOS arm64** cross-compiled on the same Linux host (`docs/ks/MACOS.md`).
 Nothing here is published as a binary; the fork exists so we can rebuild, audit and (later) patch the
 browser ourselves.
 
