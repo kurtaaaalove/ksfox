@@ -7,6 +7,7 @@
 | `fp.html` | fixture page: navigator, screen, window, Intl/timezone, WebGL 1/2, canvas (text + shapes-only), OfflineAudioContext, font probe (100 families), voices, media devices, math. Result is JSON in `#out` (Camoufox runs automation JS in an isolated world, so `window.*` set by the page is not visible to Playwright) |
 | `fp-compare.mjs <outdir> <officialDir> <selfDir> <fixtureUrl> [display]` | generates ONE camoufox-js launch config, then launches official, self, official, self with exactly that config (only the binary and its fontconfig path change). `FP_EXTRA_PREFS='{"privacy.fingerprintingProtection":false,"privacy.baselineFingerprintingProtection":false}'` turns off Gecko's per-session canvas randomisation so canvas pixels can be compared |
 | `fp-diff.py a.json b.json ...` | flattens and lists every field that differs; a field that also differs between two runs of the same binary is noise, not a build difference |
+| `ab-launch.mjs` / `ab-outbound.sh` / `ab-attrib.py` | A/B cold-start outbound capture (tcpdump + ss sampler, connections attributed to the probe binary via /proc/<pid>/exe) and the per-run destination sets. Note the Widevine CDM download host is chosen per request by Google (edgedl.me.gvt1.com / dl.google.com / www.google.com) for official and self-built alike |
 | `pcap-dests.py <pcap>` | outbound destinations (IP, ports, DNS/SNI names) from a `tcpdump -i any` capture, pure Python |
 
 Toolchain pin: the official build's compiler versions are in its `about:buildconfig`

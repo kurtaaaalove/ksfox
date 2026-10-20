@@ -5,6 +5,8 @@
 # Isolation: user namespace (container root != host root), only work/ subdirs bound rw (nosuid,nodev),
 # the git repo bound read-only, logs written by systemd to /var/log/cfbuild (outside the container's view),
 # NoNewPrivileges. Override sudo with SUDO=... (e.g. a wrapper that supplies the password).
+# KS_BUILD_DATE=YYYYMMDDhhmmss pins the BuildID (MOZ_BUILD_DATE). The appBuildID is sent to aus5.mozilla.org in
+# the GMP update URL, so for a base rebuild use the official application.ini BuildID (e.g. 20261006020805).
 set -euo pipefail
 B=${B:-/home/kurt/camoufox-build}; W=$B/work; REPO=$B/camoufox; SUDO=${SUDO:-sudo}
 STAGE=${1:?stage}; UNIT=cfbuild-$STAGE
@@ -28,4 +30,5 @@ exec $SUDO systemd-run --unit="$UNIT" --collect "${WAIT[@]}" --description="camo
     --bind-ro=$REPO:/src --bind-ro=$REPO/ks/container:/opt/ks \
     --user=builder --chdir=/work/camoufox --setenv=HOME=/home/builder \
     --setenv=KS_JOBS="$(cat $B/state/jobs 2>/dev/null || echo 12)" --setenv=KS_TAG="${KS_TAG:-v156.0.1-beta.36}" \
+    --setenv=MOZ_BUILD_DATE="${KS_BUILD_DATE:-}" \
     "${CMD[@]}"
