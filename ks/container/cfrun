@@ -1,0 +1,17 @@
+#!/bin/bash
+# Run a ks-build.sh stage in the nspawn container, inside a resource-capped transient systemd unit.
+# usage: cfrun <stage>          (unit = cfbuild-<stage>; kill: sudo systemctl stop cfbuild-<stage>)
+# extra: CFCMD="cmd ..." cfrun shell   -> run an arbitrary command as builder
+B=/home/kurt/camoufox-build
+STAGE=${1:?stage}; UNIT=cfbuild-$STAGE
+CMD=(/work/bin/ks-build.sh "$STAGE")
+[ "$STAGE" = shell ] && CMD=(/bin/bash -lc "$CFCMD")
+exec sudo systemd-run --unit="$UNIT" --collect --description="camoufox self-build: $STAGE" \
+  -p MemoryMax=24G -p MemoryHigh=22G -p MemorySwapMax=0 \
+  -p CPUQuota=1200% -p CPUWeight=20 -p IOWeight=10 \
+  -p Nice=19 -p IOSchedulingClass=idle \
+  -p StandardOutput=append:$B/logs/$UNIT.log -p StandardError=append:$B/logs/$UNIT.log \
+  /usr/bin/systemd-nspawn -q --keep-unit --register=no --console=pipe \
+    -D $B/rootfs --resolv-conf=copy-uplink --bind=$B:/work \
+    --user=builder --chdir=/work/camoufox --setenv=HOME=/home/builder \
+    "${CMD[@]}"

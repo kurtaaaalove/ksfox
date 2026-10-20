@@ -1,0 +1,134 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>fp-fixture</title></head>
+<body>
+<button id="btn" onclick="document.getElementById('clicked').textContent='yes'">click me</button>
+<span id="clicked">no</span>
+<pre id="out">pending</pre>
+<script>
+// Fingerprint fixture for self-build vs official Camoufox comparison.
+// Result: window.__fp (object), window.__fp_done (bool), JSON text in #out.
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+}
+function safe(fn) { try { return fn(); } catch (e) { return 'ERR:' + e.name; } }
+
+async function collect() {
+  const fp = {};
+  const n = navigator;
+  fp.navigator = {};
+  for (const k of ['userAgent','appVersion','appName','appCodeName','platform','oscpu','vendor','vendorSub',
+                   'product','productSub','buildID','language','hardwareConcurrency','deviceMemory','maxTouchPoints',
+                   'cookieEnabled','doNotTrack','webdriver','pdfViewerEnabled','globalPrivacyControl','onLine']) {
+    fp.navigator[k] = safe(() => { const v = n[k]; return v === undefined ? '(undefined)' : v; });
+  }
+  fp.navigator.languages = safe(() => Array.from(n.languages));
+  fp.navigator.plugins = safe(() => Array.from(n.plugins).map(p => p.name));
+  fp.navigator.mimeTypes = safe(() => Array.from(n.mimeTypes).map(m => m.type));
+  fp.navigator.protoKeysHash = await sha256(safe(() => Object.getOwnPropertyNames(Navigator.prototype).sort().join(',')));
+  fp.screen = {};
+  for (const k of ['width','height','availWidth','availHeight','availTop','availLeft','colorDepth','pixelDepth']) fp.screen[k] = safe(() => screen[k]);
+  fp.screen.orientation = safe(() => screen.orientation.type);
+  fp.window = {};
+  for (const k of ['innerWidth','innerHeight','outerWidth','outerHeight','devicePixelRatio','screenX','screenY']) fp.window[k] = safe(() => window[k]);
+  fp.window.globalsCount = safe(() => Object.getOwnPropertyNames(window).length);
+  fp.window.globalsHash = await sha256(safe(() => Object.getOwnPropertyNames(window).filter(k => !k.startsWith('__fp')).sort().join(',')));
+  // timezone / intl
+  fp.intl = {
+    timeZone: safe(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
+    locale: safe(() => Intl.DateTimeFormat().resolvedOptions().locale),
+    tzOffset: new Date(2026, 0, 1).getTimezoneOffset(),
+    tzOffsetJul: new Date(2026, 6, 1).getTimezoneOffset(),
+    dateStr: safe(() => new Date(0).toString().replace(/^.*GMT/, 'GMT')),
+    numberFmt: safe(() => (1234567.891).toLocaleString()),
+  };
+  // WebGL
+  function gl(kind) {
+    const c = document.createElement('canvas');
+    const g = c.getContext(kind);
+    if (!g) return null;
+    const o = {};
+    o.vendor = safe(() => g.getParameter(g.VENDOR));
+    o.renderer = safe(() => g.getParameter(g.RENDERER));
+    o.version = safe(() => g.getParameter(g.VERSION));
+    o.shadingLanguage = safe(() => g.getParameter(g.SHADING_LANGUAGE_VERSION));
+    const dbg = safe(() => g.getExtension('WEBGL_debug_renderer_info'));
+    if (dbg && typeof dbg === 'object') {
+      o.unmaskedVendor = safe(() => g.getParameter(dbg.UNMASKED_VENDOR_WEBGL));
+      o.unmaskedRenderer = safe(() => g.getParameter(dbg.UNMASKED_RENDERER_WEBGL));
+    }
+    const exts = safe(() => g.getSupportedExtensions()) || [];
+    o.extensionsCount = Array.isArray(exts) ? exts.length : exts;
+    o._exts = Array.isArray(exts) ? exts.join(',') : String(exts);
+    const params = ['MAX_TEXTURE_SIZE','MAX_RENDERBUFFER_SIZE','MAX_VIEWPORT_DIMS','MAX_VERTEX_ATTRIBS','MAX_VERTEX_UNIFORM_VECTORS',
+                    'MAX_FRAGMENT_UNIFORM_VECTORS','MAX_VARYING_VECTORS','MAX_COMBINED_TEXTURE_IMAGE_UNITS','ALIASED_LINE_WIDTH_RANGE',
+                    'ALIASED_POINT_SIZE_RANGE','MAX_TEXTURE_IMAGE_UNITS','MAX_CUBE_MAP_TEXTURE_SIZE'];
+    o._params = params.map(p => p + '=' + safe(() => { const v = g.getParameter(g[p]); return v && v.length !== undefined ? Array.from(v).join('x') : v; })).join(';');
+    return o;
+  }
+  fp.webgl = gl('webgl');
+  fp.webgl2 = gl('webgl2');
+  for (const k of ['webgl','webgl2']) if (fp[k]) {
+    fp[k].extensionsHash = await sha256(fp[k]._exts); delete fp[k]._exts;
+    fp[k].paramsHash = await sha256(fp[k]._params); delete fp[k]._params;
+  }
+  // canvas 2d
+  fp.canvas = await (async () => {
+    const c = document.createElement('canvas'); c.width = 280; c.height = 60;
+    const x = c.getContext('2d');
+    x.textBaseline = 'top'; x.font = '16px Arial'; x.fillStyle = '#f60'; x.fillRect(100, 1, 62, 20);
+    x.fillStyle = '#069'; x.fillText('Camoufox fp \u{1F600} 測試', 2, 15);
+    x.fillStyle = 'rgba(102,204,0,0.7)'; x.fillText('Camoufox fp \u{1F600} 測試', 4, 17);
+    x.beginPath(); x.arc(50, 30, 20, 0, Math.PI * 2); x.stroke();
+    return { hash: await sha256(c.toDataURL()), measure: x.measureText('Camoufox fp 測試').width };
+  })();
+  // audio
+  fp.audio = await (async () => {
+    try {
+      const ctx = new OfflineAudioContext(1, 44100, 44100);
+      const osc = ctx.createOscillator(); osc.type = 'triangle'; osc.frequency.value = 10000;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -50; comp.knee.value = 40; comp.ratio.value = 12; comp.attack.value = 0; comp.release.value = 0.25;
+      osc.connect(comp); comp.connect(ctx.destination); osc.start(0);
+      const buf = await ctx.startRendering();
+      const d = buf.getChannelData(0); let s = 0; for (let i = 4500; i < 5000; i++) s += Math.abs(d[i]);
+      const live = new AudioContext();
+      const r = { sum: s.toFixed(10), hash: await sha256(Array.from(d.slice(4500, 5000)).join(',')), sampleRate: live.sampleRate,
+                  maxChannelCount: live.destination.maxChannelCount, baseLatency: live.baseLatency };
+      live.close();
+      return r;
+    } catch (e) { return 'ERR:' + e.name; }
+  })();
+  // fonts (width-measurement detection over a fixed candidate list)
+  fp.fonts = (() => {
+    const cands = ['Arial','Arial Black','Calibri','Cambria','Candara','Comic Sans MS','Consolas','Constantia','Corbel','Courier New',
+      'Ebrima','Franklin Gothic Medium','Gabriola','Gadugi','Georgia','Impact','Javanese Text','Leelawadee UI','Lucida Console',
+      'Lucida Sans Unicode','Malgun Gothic','Marlett','Microsoft Himalaya','Microsoft JhengHei','Microsoft New Tai Lue',
+      'Microsoft PhagsPa','Microsoft Sans Serif','Microsoft Tai Le','Microsoft YaHei','Microsoft Yi Baiti','MingLiU-ExtB',
+      'Mongolian Baiti','MS Gothic','MV Boli','Myanmar Text','Nirmala UI','Palatino Linotype','Segoe MDL2 Assets','Segoe Print',
+      'Segoe Script','Segoe UI','Segoe UI Emoji','Segoe UI Historic','Segoe UI Symbol','SimSun','Sitka Small','Sylfaen','Symbol',
+      'Tahoma','Times New Roman','Trebuchet MS','Verdana','Webdings','Wingdings','Yu Gothic','Helvetica','Helvetica Neue',
+      'Menlo','Monaco','Geneva','Lucida Grande','Apple Color Emoji','Apple SD Gothic Neo','Avenir','Avenir Next','Futura',
+      'Gill Sans','Hiragino Sans','Optima','PingFang SC','PingFang TC','San Francisco','SF Pro','Skia','Baskerville',
+      'DejaVu Sans','DejaVu Serif','DejaVu Sans Mono','Liberation Sans','Liberation Serif','Liberation Mono','Ubuntu',
+      'Ubuntu Mono','Cantarell','Noto Sans','Noto Serif','Noto Color Emoji','Noto Sans CJK SC','Droid Sans','Roboto',
+      'Open Sans','Lato','Source Sans Pro','FreeSans','FreeSerif','Nimbus Sans','Bitstream Vera Sans','Fira Sans','Inter'];
+    const s = document.createElement('span'); s.style.cssText = 'position:absolute;left:-9999px;font-size:72px'; s.textContent = 'mmmmmmmmmmlli 字体測試';
+    document.body.appendChild(s);
+    const base = {}; for (const b of ['monospace','serif','sans-serif']) { s.style.fontFamily = b; base[b] = s.offsetWidth + 'x' + s.offsetHeight; }
+    const found = cands.filter(f => ['monospace','serif','sans-serif'].some(b => { s.style.fontFamily = `"${f}",${b}`; return (s.offsetWidth + 'x' + s.offsetHeight) !== base[b]; }));
+    s.remove();
+    return { candidates: cands.length, count: found.length, list: found };
+  })();
+  fp.speech = await new Promise(res => { try { const v = speechSynthesis.getVoices(); if (v.length) return res(v.length);
+    speechSynthesis.onvoiceschanged = () => res(speechSynthesis.getVoices().length); setTimeout(() => res(speechSynthesis.getVoices().length), 1500); } catch (e) { res('ERR:' + e.name); } });
+  fp.mediaDevices = await (async () => { try { const d = await navigator.mediaDevices.enumerateDevices(); return d.map(x => x.kind).sort().join(','); } catch (e) { return 'ERR:' + e.name; } })();
+  fp.math = [Math.tan(-1e300), Math.acosh(1e300), Math.expm1(1), Math.sinh(1), Math.cbrt(100)].join(',');
+  fp.features = { css_has: safe(() => CSS.supports('selector(:has(a))')), webgpu: 'gpu' in navigator,
+                  OffscreenCanvas: typeof OffscreenCanvas, SharedArrayBuffer: typeof SharedArrayBuffer };
+  return fp;
+}
+collect().then(fp => { window.__fp = fp; window.__fp_done = true; document.getElementById('out').textContent = JSON.stringify(fp, null, 1); })
+         .catch(e => { window.__fp = { error: String(e) }; window.__fp_done = true; document.getElementById('out').textContent = 'ERROR ' + e; });
+</script>
+</body></html>
