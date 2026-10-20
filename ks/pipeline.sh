@@ -38,6 +38,10 @@ while [ $# -gt 0 ]; do case $1 in
   *) sed -n '2,25p' "$0"; exit 2 ;; esac; shift; done
 exec 9>"$P/.lock"; flock -n 9 || { echo "another pipeline run holds $P/.lock"; exit 1; }
 
+# Everything the container wrote (work/dist, work/camoufox) and everything the VM sends back is untrusted input
+# here: read only regular, non-symlinked files (realpath must be the path itself), never unzip on the host
+# (safe-unzip.py), never put file content into a shell command line.
+regular() { local p=$1; [ -f "$p" ] && [ ! -L "$p" ] && [ "$(realpath -e -- "$p")" = "$p" ] || { echo "refusing $p: not a plain regular file"; return 1; }; }
 cflog() { # copy the part of /var/log/cfbuild/<unit>.log written since offset $2 into $3
   tail -c +$(( $2 + 1 )) "/var/log/cfbuild/$1.log" > "$3" 2>/dev/null; grep -a '@@KS' "$3" | sed 's/^/  /'; }
 vm_fixture_up() { ssh "$VM" 'V=~/camoufox-selfbuild-verify; curl -sf -m 2 http://127.0.0.1:9395/fp.html -o /dev/null && exit 0
@@ -46,7 +50,8 @@ vm_fixture_up() { ssh "$VM" 'V=~/camoufox-selfbuild-verify; curl -sf -m 2 http:/
   (cd $V/www && exec setsid python3 -m http.server 9395 --bind 127.0.0.1) > $V/http.log 2>&1 < /dev/null & echo $! > $V/http.pid
   sleep 1; curl -sf -m 2 http://127.0.0.1:9395/fp.html -o /dev/null'; }
 vm_fixture_down() { ssh "$VM" 'f=~/camoufox-selfbuild-verify/http.pid; [ -f $f ] && kill $(cat $f) 2>/dev/null; rm -f $f' >/dev/null 2>&1; }
-vm_display() { ssh "$VM" 'for d in $(seq 177 199); do [ -e /tmp/.X$d-lock ] || { echo :$d; exit; }; done'; }
+vm_display() { local d; d=$(ssh "$VM" 'for d in $(seq 177 199); do [ -e /tmp/.X$d-lock ] || { echo :$d; exit; }; done')
+  [[ $d =~ ^:[0-9]{2,3}$ ]] && echo "$d" || { echo "bad display '$d'" >&2; return 1; }; }
 
 step_build() {
   local o; o=$(stat -c %s /var/log/cfbuild/cfbuild-build.log 2>/dev/null || echo 0)
@@ -58,17 +63,18 @@ step_package() {
   z=ks-main-$VR-$(date +%m%d-%H%M).zip
   CFCMD="set -e; cd /work/dist; mv camoufox-$VR-lin.x86_64.zip $z; ls -1t ks-main-*.zip | tail -n +3 | xargs -r rm -v
          rm -rf bundle-ks; mkdir bundle-ks; cd bundle-ks; LANG=C.UTF-8 unzip -q ../$z || [ \$? -le 1 ]" "$CFRUN" shell || return 1
-  echo "$z" > "$P/last-zip"; ls -la "$B/work/dist/$z"; }
+  regular "$B/work/dist/$z" || return 1; echo "$z" > "$P/last-zip"; ls -la "$B/work/dist/$z"; }
 step_bundle() {
-  local zip=$B/work/dist/$(cat "$P/last-zip")
+  local zip=$B/work/dist/$(cat "$P/last-zip"); regular "$zip" || return 1
   [ -d "$P/self" ] && { rm -rf "$P/prev"; mv "$P/self" "$P/prev"; }
-  bash "$KV/bundle-diff.sh" "$OFFZIP" "$zip" "$P" > "$RUN/bundle-diff.txt" 2>&1
+  bash "$KV/bundle-diff.sh" "$OFFZIP" "$zip" "$P" > "$RUN/bundle-diff.txt" 2>&1 || { tail -3 "$RUN/bundle-diff.txt"; return 1; }
   grep -E 'IDENTICAL|DIFF |omni.ja:' "$RUN/bundle-diff.txt" | sed 's/^/  /'
   for d in off self; do echo "{\"version\":\"$V\",\"release\":\"$R\"}" > "$P/$d/version.json"; done
   python3 "$KV/bundle-check.py" "$P/off" "$P/self" "$PK" --prev "$P/prev" --buildid "$KS_BUILD_DATE"; }
 step_buildtester() {
   CFCMD="/opt/ks/build-tester.sh ks /work/dist/bundle-ks" "$CFRUN" shell > "$RUN/build-tester.log" 2>&1
   grep -E 'OVERALL|exit=' "$RUN/build-tester.log" | sed 's/^/  /'
+  regular "$B/work/dist/bt-official/build-tester-result.json" && regular "$B/work/dist/bt-ks/build-tester-result.json" || return 1
   python3 "$KV/bt-compare.py" "$B/work/dist/bt-official/build-tester-result.json" "$B/work/dist/bt-ks/build-tester-result.json"; }
 step_stage() {
   ssh "$VM" 'mkdir -p ~/camoufox-selfbuild-verify/www ~/camoufox-selfbuild-verify/probe
@@ -80,13 +86,13 @@ step_stage() {
   rsync -a "$KV/fp-compare.mjs" "$KV/ab-launch.mjs" "$KV/outbound-probe.sh" "$KV/runtime-check.mjs" "$VM:camoufox-selfbuild-verify/" &&
   rsync -a "$KV/fp.html" "$VM:camoufox-selfbuild-verify/www/"; }
 step_fingerprint() {
-  vm_fixture_up || return 1; local d; d=$(vm_display)
+  vm_fixture_up || return 1; local d; d=$(vm_display) || return 1
   ssh "$VM" "cd ~/camoufox-selfbuild-verify && rm -rf fp-ks && FP_EXTRA_PREFS='{\"privacy.fingerprintingProtection\":false,\"privacy.baselineFingerprintingProtection\":false}' \
     node fp-compare.mjs fp-ks ~/camoufox-official-ref ~/camoufox-selfbuild-candidate http://127.0.0.1:9395/fp.html $d" || return 1
-  rsync -a "$VM:camoufox-selfbuild-verify/fp-ks/" "$RUN/fp-ks/" && python3 "$KV/fp-check.py" "$RUN/fp-ks" "$PK"; }
+  rsync -rt "$VM:camoufox-selfbuild-verify/fp-ks/" "$RUN/fp-ks/" && python3 "$KV/fp-check.py" "$RUN/fp-ks" "$PK"; }
 step_outbound() {
   ssh "$VM" "bash ~/camoufox-selfbuild-verify/outbound-probe.sh self-ks ~/camoufox-selfbuild-candidate $PROBE_SECS" || return 1
-  rsync -a "$VM:camoufox-selfbuild-verify/probe/self-ks.*" "$RUN/" && python3 "$KV/outbound-check.py" "$RUN/self-ks.pcap" "$RUN/self-ks.ss" "$BASELINE"; }
+  rsync -rt "$VM:camoufox-selfbuild-verify/probe/self-ks.*" "$RUN/" && python3 "$KV/outbound-check.py" "$RUN/self-ks.pcap" "$RUN/self-ks.ss" "$BASELINE"; }
 step_deploy() {
   ssh "$VM" 'set -e
     rsync -a --delete ~/camoufox-selfbuild/ ~/camoufox-selfbuild-prev/
@@ -103,6 +109,7 @@ step_vmcheck() {
           echo "$out" > "$RUN/vm-$n.txt"; [ $r -eq 0 ] || rc=1; }
   chk health "$HELPER" health
   chk open   "$HELPER" open $u http://127.0.0.1:9395/fp.html; t=$(sed -n 's/^tabId=//p' "$RUN/vm-open.txt")
+  [[ $t =~ ^[A-Za-z0-9-]{1,64}$ ]] || { echo "  bad tabId '$t'"; return 1; }
   chk shot   "$HELPER" shot $u "$t"
   chk snap   "$HELPER" snap $u "$t"
   chk click  "$HELPER" click $u "$t" '#btn'
@@ -115,9 +122,13 @@ step_vmcheck() {
   ssh "$VM" 'cd ~/camoufox-selfbuild && sha256sum camoufox-bin libxul.so omni.ja browser/omni.ja application.ini' > "$RUN/sha-vm.txt"
   if diff -q "$RUN/sha-local.txt" "$RUN/sha-vm.txt" >/dev/null; then echo "    sha256 identical (5 files)"; else echo "    MISMATCH"; rc=1; fi
   ssh "$VM" 'for p in $(pgrep -u crawler -f camofox-selfbuild-svc 2>/dev/null) $(pgrep -f "camoufox-selfbuild/camoufox-bin"); do readlink /proc/$p/exe; done | sort | uniq -c | sed "s/^/    running: /"'
-  c=$(sed -n 's/^KS-Runtime-Check:[[:space:]]*//p' "$PK"/zz-ks-*.patch 2>/dev/null | tr '\n' ' ')
-  if [ -n "$c" ]; then d=$(vm_display); echo "  runtime checks: $c"
-    ssh "$VM" "cd ~/camoufox-selfbuild-verify && node runtime-check.mjs ~/camoufox-selfbuild $d $c" | sed 's/^/    /'; [ ${PIPESTATUS[0]} -eq 0 ] || rc=1; fi
+  # KS-Runtime-Check headers -> validated JSON file -> VM (patch text never reaches a shell command line)
+  python3 "$KV/runtime-checks.py" "$PK" > "$RUN/runtime-checks.json" || return 1
+  if [ "$(cat "$RUN/runtime-checks.json")" != "[]" ]; then
+    d=$(vm_display) || return 1; echo "  runtime checks: $(cat "$RUN/runtime-checks.json")"
+    rsync -rt "$RUN/runtime-checks.json" "$VM:camoufox-selfbuild-verify/runtime-checks.json" || return 1
+    ssh "$VM" "cd ~/camoufox-selfbuild-verify && node runtime-check.mjs ~/camoufox-selfbuild $d runtime-checks.json" | sed 's/^/    /'
+    [ ${PIPESTATUS[0]} -eq 0 ] || rc=1; fi
   return $rc; }
 
 trap vm_fixture_down EXIT

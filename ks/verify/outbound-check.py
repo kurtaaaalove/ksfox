@@ -26,7 +26,8 @@ for l in L:
 fails, warns, rows = [], [], []
 for l in out.splitlines():
     if not l[:1].isdigit(): continue
-    f = l.split(); ip = f[1]; names = [x for x in f[4:] if not x.startswith('(') and '.' in x]
+    # lower-case: resolvers using DNS 0x20 randomise query case (mOZILLA.MAp.Fastly.nET)
+    f = l.split(); ip = f[1]; names = sorted({x.lower().rstrip('.') for x in f[4:] if not x.startswith('(') and '.' in x})
     owner = ','.join(sorted(ip2.get(ip, {'unattributed'})))
     if 'probe' not in owner and owner != 'unattributed': continue      # someone else's traffic
     rows.append((ip, ' '.join(names) or '(no DNS/SNI name)', owner))
