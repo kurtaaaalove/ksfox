@@ -42,7 +42,8 @@ cflog() { # copy the part of /var/log/cfbuild/<unit>.log written since offset $2
   tail -c +$(( $2 + 1 )) "/var/log/cfbuild/$1.log" > "$3" 2>/dev/null; grep -a '@@KS' "$3" | sed 's/^/  /'; }
 vm_fixture_up() { ssh "$VM" 'V=~/camoufox-selfbuild-verify; curl -sf -m 2 http://127.0.0.1:9395/fp.html -o /dev/null && exit 0
   ss -ltn | grep -q "127.0.0.1:9395 " && { echo "port 9395 busy with something else"; exit 1; }
-  cd $V/www && setsid nohup python3 -m http.server 9395 --bind 127.0.0.1 > $V/http.log 2>&1 < /dev/null & echo $! > $V/http.pid
+  # the whole background job gets its own fds, otherwise it holds the ssh session open
+  (cd $V/www && exec setsid python3 -m http.server 9395 --bind 127.0.0.1) > $V/http.log 2>&1 < /dev/null & echo $! > $V/http.pid
   sleep 1; curl -sf -m 2 http://127.0.0.1:9395/fp.html -o /dev/null'; }
 vm_fixture_down() { ssh "$VM" 'f=~/camoufox-selfbuild-verify/http.pid; [ -f $f ] && kill $(cat $f) 2>/dev/null; rm -f $f' >/dev/null 2>&1; }
 vm_display() { ssh "$VM" 'for d in $(seq 177 199); do [ -e /tmp/.X$d-lock ] || { echo :$d; exit; }; done'; }
