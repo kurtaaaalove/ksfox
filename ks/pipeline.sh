@@ -22,6 +22,8 @@
 # Never touches :9377 (official, crawld) or :9378 (ksfox).
 set -uo pipefail
 B=${B:-/home/kurt/camoufox-build}; REPO=$(cd "$(dirname "$0")/.." && pwd); KV=$REPO/ks/verify
+# v156: patches/ at the repo root; v158+: browser/patches/
+PK=$REPO/patches/ks; [ -d "$REPO/browser/patches" ] && PK=$REPO/browser/patches/ks
 CFRUN=${CFRUN:-$B/bin/cfrun}; VM=${KS_VM:-crawler}; HELPER=${KS_HELPER:-$HOME/bin/camofox-ks01-self}
 export KS_TAG=${KS_TAG:-v156.0.1-beta.36}; VR=${KS_TAG#v}; V=${VR%-*}; R=${VR#*-}
 OFFZIP=${KS_OFFICIAL_ZIP:-$B/official/camoufox-$VR-lin.x86_64.zip}
@@ -47,7 +49,7 @@ vm_display() { ssh "$VM" 'for d in $(seq 177 199); do [ -e /tmp/.X$d-lock ] || {
 
 step_build() {
   local o; o=$(stat -c %s /var/log/cfbuild/cfbuild-build.log 2>/dev/null || echo 0)
-  echo "KS_BUILD_DATE=$KS_BUILD_DATE  stack: $(cd "$REPO/patches/ks" 2>/dev/null && ls zz-ks-*.patch 2>/dev/null | paste -sd' ')"
+  echo "KS_BUILD_DATE=$KS_BUILD_DATE  stack: $(cd "$PK" 2>/dev/null && ls zz-ks-*.patch 2>/dev/null | paste -sd' ')"
   CFWAIT=1 "$CFRUN" build; local rc=$?; cflog cfbuild-build "$o" "$RUN/cfbuild-build.log"; return $rc; }
 step_package() {
   local o rc z; o=$(stat -c %s /var/log/cfbuild/cfbuild-package.log 2>/dev/null || echo 0)
@@ -62,7 +64,7 @@ step_bundle() {
   bash "$KV/bundle-diff.sh" "$OFFZIP" "$zip" "$P" > "$RUN/bundle-diff.txt" 2>&1
   grep -E 'IDENTICAL|DIFF |omni.ja:' "$RUN/bundle-diff.txt" | sed 's/^/  /'
   for d in off self; do echo "{\"version\":\"$V\",\"release\":\"$R\"}" > "$P/$d/version.json"; done
-  python3 "$KV/bundle-check.py" "$P/off" "$P/self" "$REPO/patches/ks" --prev "$P/prev" --buildid "$KS_BUILD_DATE"; }
+  python3 "$KV/bundle-check.py" "$P/off" "$P/self" "$PK" --prev "$P/prev" --buildid "$KS_BUILD_DATE"; }
 step_buildtester() {
   CFCMD="/opt/ks/build-tester.sh ks /work/dist/bundle-ks" "$CFRUN" shell > "$RUN/build-tester.log" 2>&1
   grep -E 'OVERALL|exit=' "$RUN/build-tester.log" | sed 's/^/  /'
@@ -80,7 +82,7 @@ step_fingerprint() {
   vm_fixture_up || return 1; local d; d=$(vm_display)
   ssh "$VM" "cd ~/camoufox-selfbuild-verify && rm -rf fp-ks && FP_EXTRA_PREFS='{\"privacy.fingerprintingProtection\":false,\"privacy.baselineFingerprintingProtection\":false}' \
     node fp-compare.mjs fp-ks ~/camoufox-official-ref ~/camoufox-selfbuild-candidate http://127.0.0.1:9395/fp.html $d" || return 1
-  rsync -a "$VM:camoufox-selfbuild-verify/fp-ks/" "$RUN/fp-ks/" && python3 "$KV/fp-check.py" "$RUN/fp-ks" "$REPO/patches/ks"; }
+  rsync -a "$VM:camoufox-selfbuild-verify/fp-ks/" "$RUN/fp-ks/" && python3 "$KV/fp-check.py" "$RUN/fp-ks" "$PK"; }
 step_outbound() {
   ssh "$VM" "bash ~/camoufox-selfbuild-verify/outbound-probe.sh self-ks ~/camoufox-selfbuild-candidate $PROBE_SECS" || return 1
   rsync -a "$VM:camoufox-selfbuild-verify/probe/self-ks.*" "$RUN/" && python3 "$KV/outbound-check.py" "$RUN/self-ks.pcap" "$RUN/self-ks.ss" "$BASELINE"; }
@@ -112,7 +114,7 @@ step_vmcheck() {
   ssh "$VM" 'cd ~/camoufox-selfbuild && sha256sum camoufox-bin libxul.so omni.ja browser/omni.ja application.ini' > "$RUN/sha-vm.txt"
   if diff -q "$RUN/sha-local.txt" "$RUN/sha-vm.txt" >/dev/null; then echo "    sha256 identical (5 files)"; else echo "    MISMATCH"; rc=1; fi
   ssh "$VM" 'for p in $(pgrep -u crawler -f camofox-selfbuild-svc 2>/dev/null) $(pgrep -f "camoufox-selfbuild/camoufox-bin"); do readlink /proc/$p/exe; done | sort | uniq -c | sed "s/^/    running: /"'
-  c=$(sed -n 's/^KS-Runtime-Check:[[:space:]]*//p' "$REPO"/patches/ks/zz-ks-*.patch 2>/dev/null | tr '\n' ' ')
+  c=$(sed -n 's/^KS-Runtime-Check:[[:space:]]*//p' "$PK"/zz-ks-*.patch 2>/dev/null | tr '\n' ' ')
   if [ -n "$c" ]; then d=$(vm_display); echo "  runtime checks: $c"
     ssh "$VM" "cd ~/camoufox-selfbuild-verify && node runtime-check.mjs ~/camoufox-selfbuild $d $c" | sed 's/^/    /'; [ ${PIPESTATUS[0]} -eq 0 ] || rc=1; fi
   return $rc; }

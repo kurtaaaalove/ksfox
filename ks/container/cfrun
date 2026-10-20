@@ -8,7 +8,11 @@
 # KS_BUILD_DATE=YYYYMMDDhhmmss pins the BuildID (MOZ_BUILD_DATE). The appBuildID is sent to aus5.mozilla.org in
 # the GMP update URL, so for a base rebuild use the official application.ini BuildID (e.g. 20261006020805).
 set -euo pipefail
-B=${B:-/home/kurt/camoufox-build}; W=$B/work; REPO=$B/camoufox; SUDO=${SUDO:-sudo}
+B=${B:-/home/kurt/camoufox-build}; W=$B/work; REPO=${KS_REPO:-$B/camoufox}; SUDO=${SUDO:-sudo}
+# KS_REPO=<git worktree>  build another checkout (e.g. an upstream-upgrade trial); KS_WORK_CAMOUFOX=$W/<dir> gives it
+# its own build tree so the main tree (and its obj-*) is not touched. Both keep every isolation setting below.
+WCAM=${KS_WORK_CAMOUFOX:-$W/camoufox}
+case "$WCAM" in "$W"/*) ;; *) echo "KS_WORK_CAMOUFOX must be under $W (nosuid,nodev bind)"; exit 2 ;; esac
 STAGE=${1:?stage}; UNIT=cfbuild-$STAGE
 LOGDIR=/var/log/cfbuild
 CMD=(/opt/ks/ks-build.sh "$STAGE"); WAIT=()
@@ -18,6 +22,7 @@ LOGWAIT=(); [ "$STAGE" != shell ] && [ -n "${CFWAIT:-}" ] && LOGWAIT=(--wait)
 $SUDO install -d -m 755 -o root -g root $LOGDIR
 # host-side nosuid,nodev for everything the container can write (bind mounts inherit these flags)
 mountpoint -q "$W" || { $SUDO mount --bind "$W" "$W" && $SUDO mount -o remount,bind,nosuid,nodev "$W"; }
+[ -d "$WCAM" ] || $SUDO install -d -o "$(stat -c %u "$W/camoufox")" -g "$(stat -c %g "$W/camoufox")" "$WCAM"
 LOGPROPS=(-p StandardOutput=append:$LOGDIR/$UNIT.log -p StandardError=append:$LOGDIR/$UNIT.log)
 [ ${#WAIT[@]} -gt 0 ] && LOGPROPS=()
 exec $SUDO systemd-run --unit="$UNIT" --collect "${WAIT[@]}" "${LOGWAIT[@]}" --description="camoufox self-build: $STAGE" \
@@ -27,7 +32,7 @@ exec $SUDO systemd-run --unit="$UNIT" --collect "${WAIT[@]}" "${LOGWAIT[@]}" --d
   "${LOGPROPS[@]}" \
   /usr/bin/systemd-nspawn -q --keep-unit --register=no --console=pipe \
     -D $B/rootfs --private-users=pick --private-users-ownership=chown --resolv-conf=copy-uplink \
-    --bind=$W/camoufox:/work/camoufox --bind=$W/mozbuild:/work/mozbuild \
+    --bind="$WCAM":/work/camoufox --bind=$W/mozbuild:/work/mozbuild \
     --bind=$W/ccache:/work/ccache --bind=$W/dist:/work/dist \
     --bind-ro=$REPO:/src --bind-ro=$REPO/ks/container:/opt/ks \
     --user=builder --chdir=/work/camoufox --setenv=HOME=/home/builder \

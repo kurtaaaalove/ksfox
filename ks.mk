@@ -3,7 +3,9 @@
 #
 #   make -f ks.mk ks-help
 #
-include Makefile
+# v156: Makefile/upstream.sh at the root; v158+: under browser/ (only version/release are needed here)
+KS_BW := $(if $(wildcard browser/upstream.sh),browser,.)
+include $(KS_BW)/upstream.sh
 
 KS_TAG ?= v$(version)-$(release)
 KS_UPSTREAM ?= daijro/camoufox

@@ -2,7 +2,8 @@
 # Camoufox self-build stages. Runs INSIDE the container as the unprivileged user builder.
 # Container view:  /src (ro) = the git repo        /work/camoufox = build tree (repo copy without .git + artifacts)
 #                  /work/{mozbuild,ccache,dist}     /opt/ks (ro) = this directory
-# usage: ks-build.sh prepare|build|package|all|sync|kspatch|snapshot|newpatch
+# usage: ks-build.sh prepare|apply|build|package|all|sync|kspatch|snapshot|newpatch
+#   apply     fresh Firefox tree + every patch (upstream + ks), no fonts / toolchains: "does it all still apply?"
 #   kspatch   make the ks patch stack in the tree equal patches/ks/zz-ks-*.patch (quilt-like, incremental; `build`
 #             runs it first). State per tree in /work/camoufox/.ks-state/<srcdir>/ (applied.list + copies).
 #   snapshot  kspatch, then commit the whole tree (minus obj-*) into a shadow git repo OUTSIDE the tree
@@ -21,24 +22,34 @@ TAG=${KS_TAG:-v156.0.1-beta.36}
 J=${KS_JOBS:-12}
 ts(){ echo "@@KS $(date '+%F %T') [$1] $2"; }
 cd /work/camoufox
+# Layout: up to v156 the browser build (Makefile, upstream.sh, patches/, scripts/, additions/ ...) is the repo root;
+# from v158 upstream moved it to browser/ (ci/ stays at the root). BW = that directory in the build tree.
+BW=/work/camoufox; [ -f /src/browser/Makefile ] && BW=/work/camoufox/browser
 
 sync() {
   # repo -> build tree. Build artifacts are excluded, so --delete never touches them.
   rsync -a --delete --exclude /.git --exclude '/camoufox-*/' --exclude '/firefox-*' --exclude '/bundle/fonts*' \
         --exclude '/bundle/langpacks/' --exclude '/dist/' --exclude '__pycache__/' --exclude '/camoufox-*.zip' \
         --exclude '/.ks-venv/' --exclude 'node_modules/' --exclude '/.ci-work/' --exclude '*.egg-info/' \
-        --exclude '/.ks-state/' --exclude '/.ks-git/' --exclude '/.ks-edit/' /src/ /work/camoufox/
+        --exclude '/.ks-state/' --exclude '/.ks-git/' --exclude '/.ks-edit/' \
+        --exclude '/browser/camoufox-*/' --exclude '/browser/firefox-*' --exclude '/browser/bundle/fonts*' \
+        --exclude '/browser/bundle/langpacks/' --exclude '/browser/dist/' --exclude '/browser/camoufox-*.zip' \
+        /src/ /work/camoufox/
   python3 -m ci.release set-build --tag "$TAG"     # release number from the tag (working tree only)
-  . ./upstream.sh; SRC=camoufox-${version}-${release}
+  . "$BW/upstream.sh"; SRC=camoufox-${version}-${release}
   KST=/work/camoufox/.ks-state/$SRC; KSGIT=/work/camoufox/.ks-git/$SRC.git
-  ts sync "src_digest=$(python3 -c 'from pathlib import Path; from ci.browser_inputs import source_digest as d; print(d(Path("/src")))') tag=$TAG rustc=$(rustc --version | cut -d' ' -f2)"
+  ts sync "src_digest=$(python3 -c 'from pathlib import Path; from ci.browser_inputs import source_digest as d; print(d(Path("/src")))') tag=$TAG rustc=$(rustc --version | cut -d' ' -f2) layout=${BW#/work/camoufox}"
+  cd "$BW"
+}
+apply() {
+  ts fetch start;      rm -rf "$KST" "$KSGIT"; make setup-minimal;  ts fetch end   # FF tarball -> fresh tree
+  ts patch start;      make dir;            ts patch end      # apply patches/**/*.patch incl. patches/ks (fails on any .rej)
+  ks_record_all                                               # scripts/patch.py applied the ks stack too
 }
 prepare() {
   ccache -M 20G >/dev/null
   ts fonts start;      make fonts-extract;  python3 scripts/verify-fonts.py; ts fonts end
-  ts fetch start;      rm -rf "$KST" "$KSGIT"; make setup-minimal;  ts fetch end   # FF tarball -> fresh tree
-  ts patch start;      make dir;            ts patch end      # apply patches/**/*.patch incl. patches/ks (fails on any .rej)
-  ks_record_all                                               # scripts/patch.py applied the ks stack too
+  apply
   ts bootstrap start;  make mozbootstrap;   ts bootstrap end  # Taskcluster toolchains -> ~/.mozbuild
 }
 build() {
@@ -59,7 +70,7 @@ package() {
 # ---- ks patch stack (patches/ks/zz-ks-NNN-*.patch, applied after every upstream patch) ----
 # Same patch(1) flags as scripts/patch.py, plus no .orig litter.
 PFLAGS=(-p1 -l --binary --no-backup-if-mismatch)
-ks_want() { ( cd /work/camoufox/patches/ks 2>/dev/null && ls -1 zz-ks-*.patch 2>/dev/null | LC_ALL=C sort ) || true; }
+ks_want() { ( cd "$BW/patches/ks" 2>/dev/null && ls -1 zz-ks-*.patch 2>/dev/null | LC_ALL=C sort ) || true; }
 ks_body() { awk 'f || /^(diff |--- )/ { f = 1; print }' "$1"; }   # the diff without its KS-* header
 ks_record_all() {
   rm -rf "$KST"; mkdir -p "$KST/applied"; : > "$KST/applied.list"
@@ -67,7 +78,7 @@ ks_record_all() {
   ts kspatch "recorded after make dir: $(paste -sd' ' "$KST/applied.list")"
 }
 kspatch() {
-  local T=/work/camoufox/$SRC n p i j how
+  local T=$BW/$SRC n p i j how
   [ -f "$T/_READY" ] || { echo "no prepared tree $T: run prepare first"; return 1; }
   mkdir -p "$KST/applied"; touch "$KST/applied.list"
   local -a want have; mapfile -t want < <(ks_want); mapfile -t have < "$KST/applied.list"
@@ -83,7 +94,7 @@ kspatch() {
     rm -f "$p"; sed -i '$d' "$KST/applied.list"; ts kspatch "un-applied ${have[$j]}"
   done
   for ((j=i; j<${#want[@]}; j++)); do              # push the rest, in order
-    n=${want[$j]}; p=/work/camoufox/patches/ks/$n
+    n=${want[$j]}; p=$BW/patches/ks/$n
     if ( cd "$T" && patch "${PFLAGS[@]}" --forward --dry-run -i "$p" </dev/null > /tmp/kspatch.out 2>&1 ); then
       ( cd "$T" && patch "${PFLAGS[@]}" --forward -i "$p" </dev/null ); how=applied
     elif ( cd "$T" && patch "${PFLAGS[@]}" -R -f --dry-run -s -i "$p" </dev/null >/dev/null 2>&1 ); then
@@ -93,7 +104,7 @@ kspatch() {
   done
   ts kspatch "stack=[$(paste -sd' ' "$KST/applied.list")]"
 }
-g() { git --git-dir="$KSGIT" --work-tree="/work/camoufox/$SRC" -c user.name=ks -c user.email=ks@localhost \
+g() { git --git-dir="$KSGIT" --work-tree="$BW/$SRC" -c user.name=ks -c user.email=ks@localhost \
           -c core.looseCompression=1 -c gc.auto=0 -c advice.detachedHead=false "$@"; }
 snapshot() {
   kspatch
@@ -109,7 +120,7 @@ snapshot() {
   g tag -f ks-base >/dev/null; ts snapshot "ks-base=$(g rev-parse --short HEAD) files=$(g ls-files | wc -l)"
 }
 newpatch() {
-  local T=/work/camoufox/$SRC O=/work/dist/ks-newpatch f n
+  local T=$BW/$SRC O=/work/dist/ks-newpatch f n
   [ -d "$KSGIT" ] || { echo "no shadow repo: run 'ks/new-patch.sh begin' first"; return 1; }
   rm -rf "$O"; mkdir -p "$O"
   if [ -d /src/.ks-edit ]; then        # files edited on the host (ks/new-patch.sh edit <path>)
@@ -136,8 +147,8 @@ newpatch() {
 }
 sync
 case "${1:-all}" in
-  sync) ;; prepare) prepare ;; build) build ;; package) package ;;
+  sync) ;; prepare) prepare ;; apply) apply ;; build) build ;; package) package ;;
   kspatch) kspatch ;; snapshot) snapshot ;; newpatch) newpatch ;;
   all) prepare; build; package ;;
-  *) echo "usage: $0 prepare|build|package|all|sync|kspatch|snapshot|newpatch"; exit 2 ;;
+  *) echo "usage: $0 prepare|apply|build|package|all|sync|kspatch|snapshot|newpatch"; exit 2 ;;
 esac
