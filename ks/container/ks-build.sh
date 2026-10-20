@@ -17,7 +17,8 @@ cd /work/camoufox
 sync() {
   # repo -> build tree. Build artifacts are excluded, so --delete never touches them.
   rsync -a --delete --exclude /.git --exclude '/camoufox-*/' --exclude '/firefox-*' --exclude '/bundle/fonts*' \
-        --exclude '/bundle/langpacks/' --exclude '/dist/' --exclude '__pycache__/' --exclude '/camoufox-*.zip' /src/ /work/camoufox/
+        --exclude '/bundle/langpacks/' --exclude '/dist/' --exclude '__pycache__/' --exclude '/camoufox-*.zip' \
+        --exclude '/.ks-venv/' --exclude 'node_modules/' --exclude '/.ci-work/' --exclude '*.egg-info/' /src/ /work/camoufox/
   python3 -m ci.release set-build --tag "$TAG"     # release number from the tag (working tree only)
   . ./upstream.sh; SRC=camoufox-${version}-${release}
   ts sync "tree=$(python3 -c 'from ci.browser_inputs import source_digest as d; print(d())') tag=$TAG"

@@ -4,6 +4,7 @@
 <button id="btn" onclick="document.getElementById('clicked').textContent='yes'">click me</button>
 <span id="clicked">no</span>
 <pre id="out">pending</pre>
+<!-- result is read from #out: Camoufox isolates Playwright/automation JS from the page's main world -->
 <script>
 // Fingerprint fixture for self-build vs official Camoufox comparison.
 // Result: window.__fp (object), window.__fp_done (bool), JSON text in #out.

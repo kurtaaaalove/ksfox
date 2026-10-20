@@ -31,11 +31,12 @@ async function runOnce(label, dir) {
   const page = await browser.newPage();
   const res = {};
   await page.goto(fixture, { waitUntil: 'load' });
-  await page.waitForFunction(() => window.__fp_done === true, null, { timeout: 30000 });
-  res.fp = await page.evaluate(() => window.__fp);
+  // Camoufox runs Playwright's evaluate in an isolated world, so read the result from the DOM, not window.__fp
+  await page.waitForFunction(() => /^[{E]/.test(document.getElementById('out').textContent), null, { timeout: 30000 });
+  res.fp = JSON.parse(await page.textContent('#out'));
   await page.click('#btn'); res.clicked = await page.textContent('#clicked');
   await page.goto('https://example.com/', { waitUntil: 'load' });
-  res.example = { title: await page.title(), h1: await page.textContent('h1') };
+  res.example = { title: await page.title(), url: page.url(), body: (await page.evaluate(() => document.body ? document.body.innerText : "")).slice(0, 80) };
   res.version = browser.version(); res.ms = Date.now() - t0;
   await browser.close();
   writeFileSync(`${outdir}/${label}.json`, JSON.stringify(res, null, 1));
