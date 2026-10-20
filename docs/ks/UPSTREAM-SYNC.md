@@ -68,20 +68,21 @@ A rejected upstream patch means upstream itself is broken for that tag (should n
 
 ## 4. Rebuild
 
-Inside the container (see `ks/container/`):
+From the host (see `ks/container/README.md`; each stage runs in the userns build container):
 
 ```bash
-ks/container/ks-build.sh prepare   # fonts, Firefox tarball, patches, mach bootstrap
-ks/container/ks-build.sh build     # ./mach build -j12 (incremental if obj-* exists)
-ks/container/ks-build.sh package   # make package-linux arch=x86_64 -> dist/*.zip
+ks/container/cfrun prepare   # fonts, Firefox tarball, patches, mach bootstrap
+ks/container/cfrun build     # ./mach build -j12 (incremental if obj-* exists)
+ks/container/cfrun package   # make package-linux arch=x86_64 -> work/dist/*.zip
 ```
 
 For a new Firefox version run `prepare` again (it re-extracts the tarball). Within the same Firefox
 version, after adding or editing a ks patch, apply it to the existing tree and run `build` only:
 
 ```bash
-cd camoufox-<version>-<release> && patch -p1 --forward -i ../patches/ks/zz-ks-NNN-x.patch && cd ..
-ks/container/ks-build.sh build && ks/container/ks-build.sh package
+CFCMD='cd /work/camoufox/camoufox-<version>-<release> && patch -p1 --forward -i /src/patches/ks/zz-ks-NNN-x.patch' \
+  ks/container/cfrun shell
+ks/container/cfrun build && ks/container/cfrun package
 ```
 
 (`make dir` on a tree without its own git repo re-applies every patch and fails on the already-applied ones;

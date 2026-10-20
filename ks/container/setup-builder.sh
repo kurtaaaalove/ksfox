@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs INSIDE the container as builder: rustup + persistent dirs
+# Runs INSIDE the container as builder, once: rustup + pointers to the persistent bind mounts.
 set -euxo pipefail
 ln -sfn /work/mozbuild /home/builder/.mozbuild
 if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
@@ -8,7 +8,7 @@ fi
 . "$HOME/.cargo/env"
 rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
 rustc --version; cargo --version; python3 --version; clang-18 --version | head -1
-cat >> "$HOME/.bashrc" <<'RC'
+grep -q CCACHE_DIR "$HOME/.bashrc" || cat >> "$HOME/.bashrc" <<'RC'
 . "$HOME/.cargo/env"
 export CCACHE_DIR=/work/ccache
 export BUILD_TARGET=linux,x86_64
