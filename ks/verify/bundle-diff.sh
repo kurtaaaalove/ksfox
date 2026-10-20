@@ -3,9 +3,11 @@
 # usage: bundle-diff.sh <official.zip> <self.zip> [workdir]
 set -uo pipefail
 OFF=$1; SELF=$2; W=${3:-$(mktemp -d)}
-mkdir -p "$W/off" "$W/self"
-[ -f "$W/off/camoufox-bin" ] || unzip -q -o "$OFF" -d "$W/off"
-[ -f "$W/self/camoufox-bin" ] || unzip -q -o "$SELF" -d "$W/self"
+mkdir -p "$W"
+# never `unzip` a container-built zip on the host: it may carry symlinks / absolute / ../ members
+SAFE=$(dirname "$0")/safe-unzip.py
+[ -f "$W/off/camoufox-bin" ] || { rm -rf "$W/off"; python3 "$SAFE" "$OFF" "$W/off" || exit 1; }
+[ -f "$W/self/camoufox-bin" ] || { rm -rf "$W/self"; python3 "$SAFE" "$SELF" "$W/self" || exit 1; }
 echo "## (a) required files in self-built bundle"
 for f in camoufox-bin properties.json fontconfig; do
   [ -e "$W/self/$f" ] && echo "OK   $f" || echo "MISS $f"

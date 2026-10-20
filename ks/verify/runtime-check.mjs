@@ -1,12 +1,16 @@
 // Runs ON THE VM. Launch a bundle directly through Playwright (camoufox-js config, like ab-launch.mjs) and assert
 // that privileged pages contain marker strings -- e.g. about:buildconfig, which camofox-browser's /tabs/open
-// refuses (http/https only). usage: node runtime-check.mjs <bundleDir> <display> <url> <needle> [<url> <needle> ...]
+// refuses (http/https only). usage: node runtime-check.mjs <bundleDir> <display> <checks.json>
+// checks.json = [{"url": ..., "text": ...}] written by runtime-checks.py (validated on the host)
 import { pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 const NM = process.env.CAMOFOX_NM || '/home/crawler/camofox/node_modules';
 const { launchOptions } = await import(pathToFileURL(`${NM}/@askjo/camofox-browser/node_modules/camoufox-js/dist/index.js`));
 const { firefox } = await import(pathToFileURL(`${NM}/playwright-core/index.mjs`));
-const [dir, display, ...pairs] = process.argv.slice(2);
+const [dir, display, checksFile] = process.argv.slice(2);
+const checks = JSON.parse(readFileSync(checksFile, 'utf8'));
+if (!/^:[0-9]+$/.test(display)) throw new Error('bad display');
 const x = spawn('Xvfb', [display, '-screen', '0', '1x1x24', '-ac', '-nolisten', 'tcp'], { stdio: 'ignore', detached: true });
 await new Promise(r => setTimeout(r, 1000));
 let bad = 0;
@@ -18,8 +22,7 @@ try {
   const b = await firefox.launch(opts);
   const p = await b.newPage();
   console.log('browser', b.version(), 'exe', opts.executablePath);
-  for (let i = 0; i < pairs.length; i += 2) {
-    const [url, needle] = [pairs[i], pairs[i + 1]];
+  for (const { url, text: needle } of checks) {
     await p.goto(url);
     const text = await p.textContent('body');
     const line = text.split('\n').map(s => s.trim()).filter(s => s.includes(needle)).join(' | ');
