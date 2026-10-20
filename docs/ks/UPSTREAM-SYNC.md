@@ -1,6 +1,6 @@
 # ks fork: upstream sync procedure
 
-This fork (`kurtaaaalove/camoufox`) tracks `daijro/camoufox` and builds **Linux x86_64 only**.
+This fork (`kurtaaaalove/ksfox`) tracks `daijro/camoufox` and builds **Linux x86_64 only**.
 Nothing here is published as a binary; the fork exists so we can rebuild, audit and (later) patch the
 browser ourselves.
 
@@ -22,7 +22,7 @@ Rules:
 
 ```bash
 git remote -v
-# origin    https://github.com/kurtaaaalove/camoufox.git
+# origin    https://github.com/kurtaaaalove/ksfox.git
 # upstream  https://github.com/daijro/camoufox.git
 ```
 
