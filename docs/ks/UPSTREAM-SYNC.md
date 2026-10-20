@@ -10,7 +10,7 @@ browser ourselves.
 |---|---|
 | `main` | Mirror of `upstream/main`. Fast-forward only, never commit here. |
 | `ks/base-<tag>` | Exactly the upstream commit of a browser release (from that release's `manifest.json`), plus ks tooling only (`docs/ks/`, `ks/`, `ks.mk`). Nothing is added under the hashed directories (`patches/ additions/ settings/ assets/ scripts/`, `Makefile`, `upstream.sh`), so its `source_digest` equals the release manifest and building it must reproduce the official release. |
-| `ks/main` (from step 2) | `ks/base-<tag>` + our own patches in `patches/ks/` (directory created there). This is what we deploy. |
+| `ks/main` | `ks/base-<tag>` + our own patches in `patches/ks/` (`browser/patches/ks/` from v158), see `patches/ks/README.md`. This is what we build, verify (`ks/pipeline.sh`) and deploy. |
 
 Rules:
 - The upstream `Makefile` and existing upstream files are not edited; ks targets live in `ks.mk`
@@ -49,22 +49,33 @@ git commit -m "ks: tooling on ${TAG}"
 make -f ks.mk ks-verify-manifest KS_TAG=$TAG    # must print digest MATCH
 ```
 
-## 3. Merge into ks/main (once ks patches exist)
+## 3. Merge into ks/main
 
 ```bash
 git switch ks/main
-git merge --no-ff ks/base-${TAG#v}       # conflicts here are only in ks files or patches/ks
+git merge --no-ff ks/base-${TAG#v}       # textual conflicts can only be in ks files (we never edit upstream files)
 ```
 
-Then re-check every ks patch against the new Firefox tree (inside the build container):
+Upstream moved the whole browser build under `browser/` in v158 (`browser/Makefile`, `browser/upstream.sh`,
+`browser/patches/`, `browser/scripts/`, `browser/tests/build-tester`). The ks tooling detects either layout
+(`ks-build.sh` `BW`, `ks.mk` `KS_BW`, `pipeline.sh`/`new-patch.sh` `PK`), so the merge needs exactly one manual step
+when crossing that boundary:
 
 ```bash
-make -f ks.mk ks-set-build KS_TAG=$TAG
-make setup-minimal && make dir           # fails with a list of .rej files if any patch no longer applies
+git mv patches/ks browser/patches/ks     # scripts/patch.py reads <build dir>/patches/**; ours must live there
+```
+
+Before touching the main build tree, try the new base in its own worktree and build tree (same container, same
+isolation; `KS_REPO` = what is bound read-only at /src, `KS_WORK_CAMOUFOX` = a separate /work/camoufox):
+
+```bash
+git worktree add -b ks/try-${TAG#v} ../wt-${TAG#v} $COMMIT && cd ../wt-${TAG#v} && git merge --no-ff ks/main
+KS_REPO=$PWD KS_WORK_CAMOUFOX=/home/kurt/camoufox-build/work/camoufox-${TAG#v} KS_TAG=$TAG CFWAIT=1 \
+  SUDO=/home/kurt/camoufox-build/bin/ssudo ks/container/cfrun apply   # fresh Firefox tree + every patch, fails on any .rej
 ```
 
 A rejected upstream patch means upstream itself is broken for that tag (should not happen). A rejected
-`zz-ks-*` patch has to be rebased: follow `docs/patch-upgrading-guide.md` (`make workspace`, fix, `make diff`).
+`zz-ks-*` patch has to be rebased: `ks/new-patch.sh begin` on the new tree, redo the edit, `KS_NUM=NNN ks/new-patch.sh <slug>`.
 
 ## 4. Rebuild
 
@@ -74,22 +85,15 @@ Pin rustc to the version the official release used (read it from the release's `
 From the host (see `ks/container/README.md`; each stage runs in the userns build container):
 
 ```bash
-ks/container/cfrun prepare   # fonts, Firefox tarball, patches, mach bootstrap
-ks/container/cfrun build     # ./mach build -j12 (incremental if obj-* exists)
+ks/container/cfrun prepare   # fonts, Firefox tarball, patches (upstream + patches/ks), mach bootstrap
+ks/container/cfrun build     # kspatch, then ./mach build -j12 (incremental if obj-* exists)
 ks/container/cfrun package   # make package-linux arch=x86_64 -> work/dist/*.zip
 ```
 
-For a new Firefox version run `prepare` again (it re-extracts the tarball). Within the same Firefox
-version, after adding or editing a ks patch, apply it to the existing tree and run `build` only:
-
-```bash
-CFCMD='cd /work/camoufox/camoufox-<version>-<release> && patch -p1 --forward -i /src/patches/ks/zz-ks-NNN-x.patch' \
-  ks/container/cfrun shell
-ks/container/cfrun build && ks/container/cfrun package
-```
-
-(`make dir` on a tree without its own git repo re-applies every patch and fails on the already-applied ones;
-`make setup` creates that repo, but then `make dir` clobbers obj-* first. Choose per situation.)
+For a new Firefox version run `prepare` again (it re-extracts the tarball). Within the same Firefox version a
+changed / added / removed ks patch needs no manual step: `build` runs `ks-build.sh kspatch`, which swaps the
+ks patch stack in the existing tree (see `patches/ks/README.md`). The whole loop including every check below and
+the VM deploy is `ks/pipeline.sh`.
 
 ## 5. Verify before deploying
 
