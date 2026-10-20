@@ -5,7 +5,7 @@
 # flow inside the window: /start -> open example.com -> screenshot -> close session -> idle until 180 s
 # usage: outbound-mac.sh <label>
 set -uo pipefail
-L=$1; ST=$HOME/engines/ksfox-test-state; O=$ST/out-$L; mkdir -p "$O"; B=http://127.0.0.1:9378; U=ksout-$L
+L=$1; ST=$HOME/engines/ksfox-test-state; O=$ST/out-$L; mkdir -p "$O"; B=http://${KSFOX_TEST_IP:-100.106.157.19}:9378; U=ksout-$L
 ( end=$((SECONDS+180)); while [ $SECONDS -lt $end ]; do
     R=$(pgrep -f "$ST/tmp" | paste -sd' ' -)
     P=$(ps -A -o pid=,ppid= | awk -v r="$R" 'BEGIN{n=split(r,a," ");for(i=1;i<=n;i++)k[a[i]]=1}{p[NR]=$1;q[NR]=$2}
