@@ -13,12 +13,14 @@ STAGE=${1:?stage}; UNIT=cfbuild-$STAGE
 LOGDIR=/var/log/cfbuild
 CMD=(/opt/ks/ks-build.sh "$STAGE"); WAIT=()
 [ "$STAGE" = shell ] && { CMD=(/bin/bash -lc "${CFCMD:?CFCMD}"); WAIT=(--wait --pipe); }
+# CFWAIT=1: a build stage waits for its unit and returns its exit code (log still goes to $LOGDIR)
+LOGWAIT=(); [ "$STAGE" != shell ] && [ -n "${CFWAIT:-}" ] && LOGWAIT=(--wait)
 $SUDO install -d -m 755 -o root -g root $LOGDIR
 # host-side nosuid,nodev for everything the container can write (bind mounts inherit these flags)
 mountpoint -q "$W" || { $SUDO mount --bind "$W" "$W" && $SUDO mount -o remount,bind,nosuid,nodev "$W"; }
 LOGPROPS=(-p StandardOutput=append:$LOGDIR/$UNIT.log -p StandardError=append:$LOGDIR/$UNIT.log)
 [ ${#WAIT[@]} -gt 0 ] && LOGPROPS=()
-exec $SUDO systemd-run --unit="$UNIT" --collect "${WAIT[@]}" --description="camoufox self-build: $STAGE" \
+exec $SUDO systemd-run --unit="$UNIT" --collect "${WAIT[@]}" "${LOGWAIT[@]}" --description="camoufox self-build: $STAGE" \
   -p MemoryMax=24G -p MemoryHigh=22G -p MemorySwapMax=0 \
   -p CPUQuota=1200% -p CPUWeight=20 -p IOWeight=10 \
   -p Nice=19 -p IOSchedulingClass=idle -p NoNewPrivileges=yes \

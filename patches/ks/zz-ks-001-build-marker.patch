@@ -1,0 +1,30 @@
+KS-Patch: zz-ks-001-build-marker
+KS-Purpose: Pipeline smoke patch and build marker. Adds a "ks-build" section to about:buildconfig
+  (toolkit/content/buildconfig.html, preprocessed into omni.ja!chrome/toolkit/content/global/buildconfig.html)
+  so a running browser shows it was built from kurtaaaalove/camoufox ks/main with patches/ks applied.
+  Static HTML only: no JS, no pref, no network, no native code.
+KS-Fingerprint: none
+KS-Web-Visible: no. about:buildconfig is not linkable from web content (nsAboutRedirector entry has no
+  MAKE_LINKABLE), and Camoufox/Firefox never exposes it to pages. Its file sits in chrome://global/content/, a
+  contentaccessible package, so a page could at most load it cross-origin (no read access); and that file already
+  differs per build machine (compiler paths, configure options), so a few more bytes add no new signal.
+KS-Verify: ks/pipeline.sh -- bundle-check: only that omni.ja entry differs beyond build path/BuildID and it
+  contains the marker; fp-check 86/86 identical; build-tester failure set unchanged; outbound unchanged;
+  vmcheck: about:buildconfig on the deployed bundle shows "ks-build".
+KS-Touches: toolkit/content/buildconfig.html
+KS-Bundle-Marker: omni.ja!chrome/toolkit/content/global/buildconfig.html ks-build
+KS-Runtime-Check: about:buildconfig ks-build
+
+diff --git a/toolkit/content/buildconfig.html b/toolkit/content/buildconfig.html
+index 15d1e9b..1f180aa 100644
+--- a/toolkit/content/buildconfig.html
++++ b/toolkit/content/buildconfig.html
+@@ -63,6 +63,8 @@
+       #endif
+       <h2>Configure options</h2>
+       <p>@MOZ_CONFIGURE_OPTIONS@</p>
++      <h2>ks-build</h2>
++      <p>ks-build: kurtaaaalove/camoufox ks/main, own patches in patches/ks (zz-ks-*)</p>
+     </div>
+   </body>
+ </html>

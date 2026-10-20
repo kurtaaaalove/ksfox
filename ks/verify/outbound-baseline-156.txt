@@ -1,0 +1,40 @@
+# Outbound destinations of the OFFICIAL v156.0.1-beta.36 bundle on the crawler VM (camofox-js cold start + uBO +
+# example.com), from evidence/selfbuild/f-outbound.txt (10/20 morning audit + 4 official A/B runs).
+# host <name>   = exact DNS/SNI name seen from the official binary
+# suffix <dom>  = registrable domain seen from the official binary (a new host under it is a WARNING, not a failure)
+host aus5.mozilla.org
+host mozilla.map.fastly.net
+host cdn.jsdelivr.net
+host cdn.jsdelivr.net.cdn.cloudflare.net
+host ciscobinary.openh264.org
+host d156sk07toobyl.cloudfront.net
+host edgedl.me.gvt1.com
+host example.com
+host malware-filter.gitlab.io
+host malware-filter.pages.dev
+host maudie.yoyo.org
+host pgl.yoyo.org
+host publicsuffix.org
+host ublockorigin.github.io
+host curbengh.github.io
+host ublockorigin.pages.dev
+host update.googleapis.com
+# Widevine CDM download mirror: Google's redirector picks edgedl.me.gvt1.com / dl.google.com / www.google.com per
+# request for official and self-built alike (A/B runs 10/20: official used dl.google.com once)
+host dl.google.com
+host www.google.com
+suffix mozilla.org
+suffix fastly.net
+suffix jsdelivr.net
+suffix cloudflare.net
+suffix openh264.org
+suffix cloudfront.net
+suffix gvt1.com
+suffix google.com
+suffix googleapis.com
+suffix yoyo.org
+suffix github.io
+suffix pages.dev
+suffix gitlab.io
+suffix publicsuffix.org
+suffix example.com
