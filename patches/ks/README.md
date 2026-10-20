@@ -27,8 +27,8 @@ Free text before the first `diff --git` line is ignored by `patch(1)`, so every 
 | `KS-Verify:` | how it is verified | humans |
 | `KS-Touches:` | Firefox-tree paths in the diff | humans / upgrade triage |
 | `KS-Bundle-Diff:` | `omni.ja!<entry>` (or `browser/omni.ja!...`) this patch is allowed to change; it must then differ | `ks/verify/bundle-check.py` |
-| `KS-Bundle-Marker:` | `<omni>!<entry> <text>` that must be present in the packaged bundle | `bundle-check.py` |
-| `KS-Runtime-Check:` | `<url> <text>`: the deployed browser, driven by Playwright, must show `<text>` on `<url>` (about: pages work) | `ks/pipeline.sh` step `vmcheck` |
+| `KS-Bundle-Marker:` | `<omni>!<entry> <text>` that must be present in the packaged bundle, and in the omni.ja the running VM browser has mapped | `bundle-check.py`, `marker-check.py` (vmcheck) |
+| `KS-Runtime-Check:` | `<http(s) url> <text>`: the deployed browser, driven by Playwright, must show `<text>` on `<url>` (about: pages cannot be driven) | `ks/pipeline.sh` step `vmcheck` |
 
 ## How the patches get into a build
 

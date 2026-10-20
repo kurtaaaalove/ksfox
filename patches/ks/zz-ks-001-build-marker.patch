@@ -10,10 +10,10 @@ KS-Web-Visible: no. about:buildconfig is not linkable from web content (nsAboutR
   differs per build machine (compiler paths, configure options), so a few more bytes add no new signal.
 KS-Verify: ks/pipeline.sh -- bundle-check: only that omni.ja entry differs beyond build path/BuildID and it
   contains the marker; fp-check 86/86 identical; build-tester failure set unchanged; outbound unchanged;
-  vmcheck: about:buildconfig on the deployed bundle shows "ks-build".
+  vmcheck: the omni.ja mapped by the RUNNING :9376 browser contains "ks-build" (marker-check.py). Opening
+  about:buildconfig by hand shows the section; Playwright cannot (Juggler never commits about: navigations).
 KS-Touches: toolkit/content/buildconfig.html
 KS-Bundle-Marker: omni.ja!chrome/toolkit/content/global/buildconfig.html ks-build
-KS-Runtime-Check: about:buildconfig ks-build
 
 diff --git a/toolkit/content/buildconfig.html b/toolkit/content/buildconfig.html
 index 15d1e9b..1f180aa 100644

@@ -12,7 +12,7 @@
 | `fp-check.py <fp-compare outdir> [patches/ks]` | gate: every fp.* field identical official vs candidate in all 4 runs (or declared with `KS-Fingerprint`) |
 | `bt-compare.py <official.json> <candidate.json>` | gate: build-tester grade, score and the set of failed checks identical |
 | `outbound-probe.sh` + `outbound-check.py` + `outbound-baseline-156.txt` | gate: 180 s cold-start capture of the candidate; every destination attributed to it is in the official baseline (DNS names lower-cased: 0x20 case randomisation) |
-| `runtime-checks.py` + `runtime-check.mjs` | `KS-Runtime-Check` headers -> validated JSON -> Playwright on the VM opens e.g. about:buildconfig and looks for the marker |
+| `runtime-checks.py` + `marker-check.py` / `runtime-check.mjs` | `KS-Bundle-Marker` / `KS-Runtime-Check` headers -> validated JSON -> on the VM: the omni.ja mapped by the running browser (`/proc/<pid>/maps`) contains each marker; http(s) pages opened through Playwright show their text (about: pages cannot be driven: Juggler never commits them) |
 | `safe-unzip.py <zip> <dest>` | the only way a container-built zip is unpacked on the host (refuses symlink / absolute / `..` members, clamps modes) |
 | `pcap-dests.py <pcap>` | outbound destinations (IP, ports, DNS/SNI names) from a `tcpdump -i any` capture, pure Python |
 
